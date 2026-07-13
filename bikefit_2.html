@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>BikeFit AI — анализ посадки</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --page:#0d0d0d;
+    --surface:#1a1a19;
+    --surface-2:#232322;
+    --ink:#ffffff;
+    --ink-2:#c3c2b7;
+    --ink-muted:#898781;
+    --hairline:rgba(255,255,255,0.10);
+    --grid:#2c2c2a;
+    --accent:#3987e5;
+    --accent-2:#199e70;
+    --good:#0ca30c;
+    --warn:#fab219;
+    --crit:#d03b3b;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--page);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    font-size:15px;line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  .screen{display:none;min-height:100vh}
+  .screen.active{display:block}
+  .wrap{max-width:1240px;margin:0 auto;padding:24px 20px 48px}
+
+  /* ---------- home ---------- */
+  header.hero{padding:40px 0 8px;text-align:center}
+  .hero h1{font-size:34px;font-weight:800;letter-spacing:-.02em}
+  .hero h1 span{color:var(--accent)}
+  .hero p{color:var(--ink-2);margin-top:8px;max-width:640px;margin-left:auto;margin-right:auto}
+  .setup-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:26px 0 6px}
+  .seg{background:var(--surface);border:1px solid var(--hairline);border-radius:12px;padding:6px;display:flex;gap:4px;flex-wrap:wrap}
+  .seg button{background:transparent;border:0;color:var(--ink-2);padding:8px 14px;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--accent);color:#fff;font-weight:600}
+  .seg-label{font-size:12px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px;text-align:center}
+  .modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:28px}
+  .mode-card{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:22px;cursor:pointer;transition:border-color .15s, transform .15s;text-align:left}
+  .mode-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .mode-card .ic{font-size:30px}
+  .mode-card h3{margin:10px 0 6px;font-size:17px}
+  .mode-card p{color:var(--ink-2);font-size:13.5px}
+  .tips{margin-top:34px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:20px 22px}
+  .tips h4{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted);margin-bottom:10px}
+  .tips ol{margin-left:18px;color:var(--ink-2);font-size:14px}
+  .tips li{margin:5px 0}
+  .footnote{margin-top:18px;color:var(--ink-muted);font-size:12.5px;text-align:center}
+
+  /* ---------- analyze ---------- */
+  .bar{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--hairline);flex-wrap:wrap}
+  .bar .title{font-weight:700;font-size:16px}
+  .bar .title span{color:var(--accent)}
+  .btn{background:var(--surface-2);color:var(--ink);border:1px solid var(--hairline);border-radius:10px;padding:8px 14px;font-size:14px;cursor:pointer;font-family:inherit}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);font-weight:600}
+  .btn.small{padding:5px 10px;font-size:13px}
+  .grow{flex:1}
+  .layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(320px,1fr);gap:18px;padding:18px 20px;max-width:1400px;margin:0 auto}
+  @media (max-width:980px){.layout{grid-template-columns:1fr}}
+  .stage{position:relative;background:#000;border-radius:var(--radius);overflow:hidden;border:1px solid var(--hairline);aspect-ratio:16/9;align-self:start}
+  .stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
+  .stage video{object-fit:contain}
+  .stage .overlay-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(13,13,13,.82);text-align:center;padding:20px;z-index:5}
+  .overlay-msg .big{font-size:17px;font-weight:600;max-width:420px}
+  .overlay-msg .sub{color:var(--ink-2);font-size:13.5px;max-width:440px}
+  #qrBox{background:#fff;padding:10px;border-radius:12px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid var(--hairline)}
+  .pill.ok{color:var(--good);border-color:rgba(12,163,12,.4)}
+  .pill.warn{color:var(--warn);border-color:rgba(250,178,25,.4)}
+  .pill.crit{color:var(--crit);border-color:rgba(208,59,59,.45)}
+  .pill.idle{color:var(--ink-muted)}
+  .statusline{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;font-size:13px;color:var(--ink-2)}
+
+  .panel{display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--surface);border:1px solid var(--hairline);border-radius:var(--radius);padding:16px 18px}
+  .card h4{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-muted);margin-bottom:10px}
+  .verdict{font-size:15px}
+  .verdict b{color:var(--accent)}
+  .metric{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-bottom:1px solid var(--grid)}
+  .metric:last-child{border-bottom:0}
+  .metric .name{font-size:13.5px;color:var(--ink-2)}
+  .metric .val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;grid-row:span 2;align-self:center;text-align:right;min-width:74px}
+  .metric .val small{font-size:12px;color:var(--ink-muted);font-weight:400}
+  .meter{grid-column:1;height:18px;position:relative;margin-top:4px}
+  .meter .track{position:absolute;top:7px;left:0;right:0;height:4px;border-radius:2px;background:var(--grid)}
+  .meter .band{position:absolute;top:7px;height:4px;border-radius:2px;background:rgba(57,135,229,.55)}
+  .meter .dot{position:absolute;top:2px;width:14px;height:14px;border-radius:50%;border:2px solid var(--surface);transform:translateX(-50%);background:var(--ink-muted)}
+  .meter .lab{position:absolute;top:-3px;font-size:10.5px;color:var(--ink-muted);font-variant-numeric:tabular-nums}
+  .metric .status{font-size:12px;font-weight:600;grid-column:1}
+  .status.ok{color:var(--good)} .status.warn{color:var(--warn)} .status.crit{color:var(--crit)} .status.idle{color:var(--ink-muted)}
+  .advice{display:flex;flex-direction:column;gap:10px}
+  .advice .item{display:flex;gap:10px;font-size:13.5px;color:var(--ink-2);background:var(--surface-2);border-radius:10px;padding:10px 12px;border-left:3px solid var(--warn)}
+  .advice .item.crit{border-left-color:var(--crit)}
+  .advice .item.good{border-left-color:var(--good)}
+  .advice .item b{color:var(--ink)}
+
+  /* ---------- phone sender ---------- */
+  #screen-cam{background:#000}
+  .cam-wrap{min-height:100vh;display:flex;flex-direction:column}
+  .cam-stage{flex:1;position:relative}
+  .cam-stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .cam-bar{padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:10px;align-items:center;background:var(--surface)}
+  .cam-status{flex:1;font-size:14px;color:var(--ink-2)}
+  .cam-status b{color:var(--ink)}
+  .rec-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--crit);margin-right:6px;animation:blink 1.2s infinite}
+  @keyframes blink{50%{opacity:.25}}
+  input[type=file]{display:none}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- ================= HOME ================= -->
+<div class="screen active" id="screen-home">
+  <div class="wrap">
+    <header class="hero">
+      <h1>🚴 BikeFit <span>AI</span></h1>
+      <p>Анализ посадки на велосипеде по видео: определяет углы в суставах в реальном времени, сравнивает с целевыми диапазонами и подсказывает, что изменить.</p>
+    </header>
+
+    <div class="setup-row">
+      <div>
+        <span class="seg-label">Тип велосипеда</span>
+        <div class="seg" id="segBike"></div>
+      </div>
+      <div>
+        <span class="seg-label">Целевой уровень посадки</span>
+        <div class="seg" id="segLevel"></div>
+      </div>
+    </div>
+
+    <div class="modes">
+      <div class="mode-card" id="modeStream">
+        <div class="ic">📱</div>
+        <h3>Трансляция с телефона (Wi-Fi)</h3>
+        <p>Телефон стримит видео на этот компьютер через браузер. Отсканируйте QR-код камерой телефона — установка приложений не нужна.</p>
+      </div>
+      <div class="mode-card" id="modeWebcam">
+        <div class="ic">🎥</div>
+        <h3>Камера этого устройства</h3>
+        <p>Вебкамера или телефон, подключённый как вебкамера (iPhone Continuity Camera, Android «Веб-камера» по USB, DroidCam).</p>
+      </div>
+      <div class="mode-card" id="modeFile">
+        <div class="ic">📁</div>
+        <h3>Видеофайл</h3>
+        <p>Снимите видео на телефон, перенесите на компьютер и загрузите сюда (MP4/MOV/WebM).</p>
+      </div>
+      <div class="mode-card" id="modeDemo">
+        <div class="ic">🎬</div>
+        <h3>Демо-режим</h3>
+        <p>Синтетический велосипедист с заранее известными углами — посмотрите, как выглядит анализ, без камеры и видео.</p>
+      </div>
+    </div>
+
+    <div class="tips">
+      <h4>Как правильно снять</h4>
+      <ol>
+        <li>Велосипед на станке (или у стены), камера <b>строго сбоку</b>, на расстоянии 3–5 м.</li>
+        <li>Высота камеры — примерно на уровне седла/каретки, горизонтально, весь силуэт в кадре.</li>
+        <li>Хорошее освещение, облегающая одежда — так точки тела определяются точнее.</li>
+        <li>Крутите педали в спокойном темпе 15–20 секунд, руки в обычном хвате (капоты / грипсы / аэробары).</li>
+      </ol>
+    </div>
+    <p class="footnote">Диапазоны углов — ориентиры динамического байкфита из открытых методик; они не заменяют работу с фиттером при болях или травмах.</p>
+  </div>
+</div>
+
+<!-- ================= ANALYZE ================= -->
+<div class="screen" id="screen-analyze">
+  <div class="bar">
+    <button class="btn small" id="btnBack">← Назад</button>
+    <div class="title">BikeFit <span>AI</span></div>
+    <div class="grow"></div>
+    <div class="seg" id="segBike2" style="padding:4px"></div>
+    <div class="seg" id="segLevel2" style="padding:4px"></div>
+    <button class="btn small" id="btnReport">📸 Отчёт PNG</button>
+  </div>
+  <div class="layout">
+    <div>
+      <div class="stage" id="stage">
+        <video id="vid" playsinline muted></video>
+        <canvas id="cv"></canvas>
+        <div class="overlay-msg" id="stageMsg">
+          <div class="big" id="msgBig">Подготовка…</div>
+          <div class="sub" id="msgSub"></div>
+          <div id="qrBox" style="display:none"></div>
+          <div id="msgExtra" class="sub"></div>
+        </div>
+      </div>
+      <div class="statusline">
+        <span class="pill idle" id="pillPose">⏳ Поиск позы…</span>
+        <span class="pill idle" id="pillPedal">🦵 Ожидание педалирования</span>
+        <span id="srcInfo" style="color:var(--ink-muted);font-size:12.5px"></span>
+        <div class="grow"></div>
+        <button class="btn small" id="btnPause" style="display:none">⏸ Пауза</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="card">
+        <h4>Итоговая оценка</h4>
+        <div class="verdict" id="verdict">Идёт сбор данных — крутите педали в обычном темпе…</div>
+      </div>
+      <div class="card">
+        <h4>Углы (сглажено за последние секунды)</h4>
+        <div id="metrics"></div>
+      </div>
+      <div class="card">
+        <h4>Рекомендации</h4>
+        <div class="advice" id="advice"><div class="item good">Соберём немного данных и подскажем, что подкрутить.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PHONE CAMERA (SENDER) ================= -->
+<div class="screen" id="screen-cam">
+  <div class="cam-wrap">
+    <div class="cam-stage">
+      <video id="camPreview" playsinline muted autoplay></video>
+      <canvas id="camGuide" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></canvas>
+    </div>
+    <div class="cam-bar">
+      <div class="cam-status" id="camStatus">Подключение…</div>
+      <button class="btn small" id="btnGuide">👤 Силуэт</button>
+      <button class="btn small" id="btnFlip">🔄 Камера</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="video/*">
+
+<script type="module">
+/* ============================================================
+   BikeFit AI — один файл. MediaPipe Pose + WebRTC (PeerJS).
+   MediaPipe загружается динамически, чтобы приложение (и демо-режим)
+   работало даже без доступа к CDN.
+   ============================================================ */
+const MP_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+/* ---------------- Референсные диапазоны (градусы) ----------------
+   kneeExt — угол в колене в нижней точке (больше = прямее нога)
+   torso   — угол корпуса к горизонту (меньше = агрессивнее)
+   elbow   — угол в локте
+   hipMin  — минимальный (закрытый) угол корпус–бедро в верхней точке
+   shoulder— угол плечо(рука)–корпус
+------------------------------------------------------------------ */
+const REF = {
+  road:  { label:'Шоссе', levels:{
+    novice:{ torso:[45,55], elbow:[145,170], kneeExt:[138,148], hipMin:[50,75], shoulder:[75,95] },
+    amateur:{torso:[37,47], elbow:[140,165], kneeExt:[140,150], hipMin:[45,70], shoulder:[78,98] },
+    pro:{    torso:[30,40], elbow:[130,155], kneeExt:[140,150], hipMin:[40,65], shoulder:[80,100] },
+  }},
+  gravel:{ label:'Гравел', levels:{
+    novice:{ torso:[50,60], elbow:[145,170], kneeExt:[138,148], hipMin:[52,78], shoulder:[72,92] },
+    amateur:{torso:[42,52], elbow:[140,165], kneeExt:[140,150], hipMin:[48,72], shoulder:[75,95] },
+    pro:{    torso:[35,45], elbow:[132,158], kneeExt:[140,150], hipMin:[43,68], shoulder:[78,98] },
+  }},
+  xc:    { label:'XC МТБ', levels:{
+    novice:{ torso:[52,64], elbow:[140,168], kneeExt:[136,146], hipMin:[55,80], shoulder:[70,90] },
+    amateur:{torso:[46,58], elbow:[135,160], kneeExt:[138,148], hipMin:[50,75], shoulder:[72,92] },
+    pro:{    torso:[40,52], elbow:[130,155], kneeExt:[138,148], hipMin:[45,70], shoulder:[75,95] },
+  }},
+  tt:    { label:'ТТ / Триатлон', levels:{
+    novice:{ torso:[25,35], elbow:[85,115], kneeExt:[140,152], hipMin:[38,60], shoulder:[80,105] },
+    amateur:{torso:[20,30], elbow:[85,110], kneeExt:[142,153], hipMin:[35,58], shoulder:[85,110] },
+    pro:{    torso:[13,23], elbow:[85,105], kneeExt:[143,155], hipMin:[32,55], shoulder:[90,115] },
+  }},
+};
+const LEVELS = { novice:'Новичок', amateur:'Любитель', pro:'Про' };
+const METRICS = [
+  { key:'kneeExt', name:'Колено внизу (разгибание)', hint:'седло' },
+  { key:'torso',   name:'Наклон корпуса к горизонту', hint:'руль/вынос' },
+  { key:'elbow',   name:'Угол в локте', hint:'кокпит' },
+  { key:'hipMin',  name:'Бедро–корпус вверху (закрытие)', hint:'комфорт/аэро' },
+  { key:'shoulder',name:'Плечо–корпус', hint:'reach' },
+];
+
+let bike = 'road', level = 'amateur';
+
+/* ---------------- утилиты углов ---------------- */
+const deg = r => r*180/Math.PI;
+function angleAt(a,b,c){ // угол в точке b
+  const v1={x:a.x-b.x,y:a.y-b.y}, v2={x:c.x-b.x,y:c.y-b.y};
+  const d=(v1.x*v2.x+v1.y*v2.y)/((Math.hypot(v1.x,v1.y)*Math.hypot(v2.x,v2.y))||1e-9);
+  return deg(Math.acos(Math.min(1,Math.max(-1,d))));
+}
+function torsoAngle(hip,shoulder){ // к горизонту, 0 = горизонтально
+  return deg(Math.atan2(Math.abs(hip.y-shoulder.y), Math.abs(shoulder.x-hip.x)||1e-9));
+}
+function percentile(arr,p){
+  if(!arr.length) return null;
+  const s=[...arr].sort((a,b)=>a-b);
+  const i=(s.length-1)*p; const lo=Math.floor(i), hi=Math.ceil(i);
+  return s[lo]+(s[hi]-s[lo])*(i-lo);
+}
+const median = a => percentile(a,.5);
+
+/* ---------------- состояние анализа ---------------- */
+const WINDOW_MS = 6000;
+let samples = [];           // {t, knee, hip, torso, elbow, shoulder}
+let lastLm = null, lastSide = 'R';
+let poseOk = false, pedaling = false;
+let stats = null;           // рассчитанные значения
+let paused = false;
+
+function pushSample(s){
+  samples.push(s);
+  const cut = s.t - WINDOW_MS;
+  while(samples.length && samples[0].t < cut) samples.shift();
+}
+function computeStats(){
+  if(samples.length < 15) return null;
+  const col = k => samples.map(s=>s[k]).filter(v=>v!=null);
+  const knee = col('knee');
+  const amp = percentile(knee,.95) - percentile(knee,.05);
+  pedaling = amp > 25;
+  return {
+    kneeExt: percentile(knee,.95),
+    kneeMin: percentile(knee,.05),
+    torso:   median(col('torso')),
+    elbow:   median(col('elbow')),
+    hipMin:  percentile(col('hip'),.05),
+    shoulder:median(col('shoulder')),
+    pedaling, n:samples.length,
+  };
+}
+
+/* ---------------- оценка и советы ---------------- */
+function gradeVal(v, range){
+  if(v==null||!range) return 'idle';
+  if(v>=range[0]&&v<=range[1]) return 'ok';
+  if(v>=range[0]-5&&v<=range[1]+5) return 'warn';
+  return 'crit';
+}
+const ADVICE = {
+  kneeExt:{
+    low:{t:'crit', h:'Седло низковато', b:'Колено остаётся сильно согнутым в нижней точке — теряется мощность, растёт нагрузка на переднюю часть колена. Поднимите седло на 3–5 мм и повторите замер.'},
+    high:{t:'crit', h:'Седло высоковато', b:'Нога почти полностью выпрямляется — риск боли под коленом и раскачивания таза. Опустите седло на 3–5 мм и повторите замер.'},
+  },
+  torso:{
+    low:{t:'warn', h:'Корпус ниже цели', b:'Посадка агрессивнее выбранного уровня. Если чувствуете дискомфорт в шее/пояснице — поднимите руль (проставочные кольца) или возьмите вынос короче/с большим углом.'},
+    high:{t:'warn', h:'Корпус слишком вертикальный', b:'Для целевого уровня можно ниже: уберите проставки под выносом, возьмите вынос длиннее/ниже — станет аэродинамичнее и стабильнее.'},
+  },
+  elbow:{
+    low:{t:'warn', h:'Локти слишком согнуты', b:'Сильный сгиб в локте обычно значит, что кокпит слишком близко или низко. Проверьте длину выноса и высоту руля.'},
+    high:{t:'warn', h:'Руки почти прямые', b:'Прямые руки передают вибрации в плечи и шею. Слегка согните локти; если так держаться тяжело — руль слишком далеко: вынос короче или руль выше.'},
+  },
+  hipMin:{
+    low:{t:'warn', h:'Угол бедро–корпус сильно закрыт', b:'В верхней точке хода педали бедро «упирается» в корпус — так теряется мощность и появляется дискомфорт в паху/пояснице. Приподнимите руль или чуть сместите седло; на ТТ помогает вращение таза вперёд.'},
+    high:{t:'good', h:'Таз раскрыт свободно', b:'Запас по закрытию бедра есть — при желании можно опустить перед и выиграть в аэродинамике.'},
+  },
+  shoulder:{
+    low:{t:'warn', h:'Руки «поджаты» к корпусу', b:'Плечевой угол мал — возможно, руль слишком близко (короткий reach). Попробуйте вынос длиннее.'},
+    high:{t:'warn', h:'Руки вытянуты далеко вперёд', b:'Плечевой угол велик — тянетесь к рулю. Вынос короче или седло чуть вперёд (не «догоняйте» руль седлом, если колено уже в норме).'},
+  },
+};
+function buildAdvice(st, ref){
+  const out=[];
+  for(const m of METRICS){
+    const v=st[m.key], r=ref[m.key];
+    const g=gradeVal(v,r);
+    if(g==='ok'||g==='idle') continue;
+    const dir = v < r[0] ? 'low' : 'high';
+    const a = ADVICE[m.key][dir];
+    out.push({sev: g==='crit'?'crit':(a.t==='good'?'good':'warn'), h:a.h, b:a.b, delta:Math.round(v < r[0]? r[0]-v : v-r[1])});
+  }
+  out.sort((a,b)=> (a.sev==='crit'?-1:1)-(b.sev==='crit'?-1:1));
+  return out;
+}
+function levelMatch(st){
+  const L = REF[bike].levels;
+  for(const k of ['pro','amateur','novice']){
+    const r=L[k].torso;
+    if(st.torso>=r[0]&&st.torso<=r[1]) return k;
+  }
+  if(st.torso < L.pro.torso[0]) return 'pro+';
+  return 'novice-';
+}
+
+/* ---------------- UI: сегменты выбора ---------------- */
+function buildSeg(el, items, cur, onPick){
+  el.innerHTML='';
+  for(const [k,lab] of items){
+    const b=document.createElement('button');
+    b.textContent=lab; if(k===cur) b.classList.add('on');
+    b.onclick=()=>{ onPick(k); };
+    el.appendChild(b);
+  }
+}
+function refreshSegs(){
+  const bikes = Object.entries(REF).map(([k,v])=>[k,v.label]);
+  const lvls = Object.entries(LEVELS);
+  for(const id of ['segBike','segBike2']) buildSeg(document.getElementById(id), bikes, bike, k=>{bike=k;refreshSegs();renderPanel();});
+  for(const id of ['segLevel','segLevel2']) buildSeg(document.getElementById(id), lvls, level, k=>{level=k;refreshSegs();renderPanel();});
+}
+refreshSegs();
+
+/* ---------------- UI: метрики ---------------- */
+const metricsEl=document.getElementById('metrics');
+function renderPanel(){
+  const ref=REF[bike].levels[level];
+  metricsEl.innerHTML='';
+  for(const m of METRICS){
+    const v = stats? stats[m.key] : null;
+    const r = ref[m.key];
+    const g = stats? gradeVal(v,r) : 'idle';
+    const lo=r[0]-18, hi=r[1]+18;              // шкала метра
+    const pc = x => Math.min(100,Math.max(0, (x-lo)/(hi-lo)*100));
+    const dotColor = g==='ok'?'var(--good)':g==='warn'?'var(--warn)':g==='crit'?'var(--crit)':'var(--ink-muted)';
+    const statusTxt = g==='ok'?'✓ В норме': g==='warn'?'▲ Чуть вне диапазона': g==='crit'?'✕ Вне диапазона':'— нет данных';
+    const div=document.createElement('div'); div.className='metric';
+    div.innerHTML=`
+      <div class="name">${m.name}</div>
+      <div class="val">${v!=null? Math.round(v)+'°':'–'}<br><small>цель ${r[0]}–${r[1]}°</small></div>
+      <div class="meter">
+        <div class="track"></div>
+        <div class="band" style="left:${pc(r[0])}%;width:${pc(r[1])-pc(r[0])}%"></div>
+        ${v!=null?`<div class="dot" style="left:${pc(v)}%;background:${dotColor}"></div>`:''}
+        <div class="lab" style="left:${pc(r[0])}%;transform:translateX(-50%)">${r[0]}</div>
+        <div class="lab" style="left:${pc(r[1])}%;transform:translateX(-50%)">${r[1]}</div>
+      </div>
+      <div class="status ${g}">${statusTxt}</div>`;
+    metricsEl.appendChild(div);
+  }
+  renderVerdict();
+}
+function renderVerdict(){
+  const vEl=document.getElementById('verdict'), aEl=document.getElementById('advice');
+  if(!stats){ vEl.textContent='Идёт сбор данных — крутите педали в обычном темпе…'; return; }
+  const ref=REF[bike].levels[level];
+  const adv=buildAdvice(stats,ref);
+  const lm=levelMatch(stats);
+  const lmTxt = lm==='pro+'? 'агрессивнее уровня «Про»' : lm==='novice-'? 'расслабленнее уровня «Новичок»' : `уровню «${LEVELS[lm]}»`;
+  const okCount = METRICS.filter(m=>gradeVal(stats[m.key],ref[m.key])==='ok').length;
+  let msg = `По наклону корпуса ваша посадка сейчас соответствует <b>${lmTxt}</b>. `;
+  msg += okCount===METRICS.length
+    ? `Все ${okCount} углов в целевых диапазонах уровня «${LEVELS[level]}» — отличная посадка! 🎯`
+    : `В целевые диапазоны уровня «${LEVELS[level]}» попадает ${okCount} из ${METRICS.length} углов.`;
+  if(!stats.pedaling) msg += ' <span style="color:var(--warn)">⚠ Педалирование не обнаружено — углы колена/бедра оцениваются по статичной позе и могут быть неточными.</span>';
+  vEl.innerHTML=msg;
+  aEl.innerHTML='';
+  if(!adv.length){ aEl.innerHTML='<div class="item good"><div><b>Ничего менять не нужно.</b> Посадка соответствует целевому уровню. Повторяйте проверку после смены компонентов или при дискомфорте.</div></div>'; return; }
+  for(const a of adv){
+    const d=document.createElement('div'); d.className='item '+(a.sev==='crit'?'crit':a.sev==='good'?'good':'');
+    d.innerHTML=`<div><b>${a.h}${a.delta?` (≈${a.delta}° от цели)`:''}.</b> ${a.b}</div>`;
+    aEl.appendChild(d);
+  }
+}
+renderPanel();
+
+/* ---------------- MediaPipe ---------------- */
+let landmarker=null, landmarkerPromise=null;
+function ensureLandmarker(){
+  if(landmarkerPromise) return landmarkerPromise;
+  landmarkerPromise = (async()=>{
+  const { PoseLandmarker, FilesetResolver } = await import(MP_URL);
+  const vision = await FilesetResolver.forVisionTasks(MP_URL+"/wasm");
+  for(const delegate of ['GPU','CPU']){
+    try{
+      landmarker = await PoseLandmarker.createFromOptions(vision,{
+        baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task", delegate },
+        runningMode:"VIDEO", numPoses:1,
+        minPoseDetectionConfidence:.5, minPosePresenceConfidence:.5, minTrackingConfidence:.5,
+      });
+      break;
+    }catch(e){ console.warn('delegate '+delegate+' failed', e); }
+  }
+  if(!landmarker) throw new Error('Не удалось инициализировать модель позы');
+  return landmarker;
+  })();
+  landmarkerPromise.catch(()=>{ landmarkerPromise=null; });
+  return landmarkerPromise;
+}
+
+/* индексы BlazePose */
+const IDX = { R:{sh:12,el:14,wr:16,hip:24,kn:26,an:28,heel:30,toe:32}, L:{sh:11,el:13,wr:15,hip:23,kn:25,an:27,heel:29,toe:31} };
+function pickSide(lm){
+  const vis = s => ['sh','el','wr','hip','kn','an'].reduce((a,k)=>a+(lm[IDX[s][k]].visibility??0),0);
+  return vis('R')>=vis('L') ? 'R':'L';
+}
+/* EMA-сглаживание точек */
+let ema=null; const EMA_A=.45;
+function smooth(lm){
+  if(!ema){ ema=lm.map(p=>({...p})); return ema; }
+  for(let i=0;i<lm.length;i++){
+    ema[i].x+= EMA_A*(lm[i].x-ema[i].x);
+    ema[i].y+= EMA_A*(lm[i].y-ema[i].y);
+    ema[i].visibility=lm[i].visibility;
+  }
+  return ema;
+}
+
+/* ---------------- отрисовка ---------------- */
+const vid=document.getElementById('vid'), cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+function drawPose(lm, side, angles){
+  const W=cv.width, H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  if(!lm) return;
+  const I=IDX[side];
+  const P=k=>({x:lm[I[k]].x*W, y:lm[I[k]].y*H});
+  const chain=[['sh','el'],['el','wr'],['sh','hip'],['hip','kn'],['kn','an'],['an','heel'],['heel','toe'],['an','toe']];
+  ctx.lineWidth=Math.max(2,W/480*2); ctx.strokeStyle='#3987e5'; ctx.lineCap='round';
+  for(const [a,b] of chain){ const p=P(a),q=P(b); ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke(); }
+  for(const k of Object.keys(I)){ const p=P(k); ctx.beginPath();ctx.arc(p.x,p.y,Math.max(3,W/480*3.5),0,7);ctx.fillStyle='#fff';ctx.fill(); }
+  /* подписи углов */
+  const label=(p,txt)=>{
+    ctx.font=`600 ${Math.max(11,W/64)}px system-ui`;
+    const w=ctx.measureText(txt).width+10, h=Math.max(16,W/44);
+    ctx.fillStyle='rgba(13,13,13,.78)';
+    ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(p.x+8,p.y-h/2,w,h,5); else ctx.rect(p.x+8,p.y-h/2,w,h);
+    ctx.fill();
+    ctx.fillStyle='#fff'; ctx.textBaseline='middle';
+    ctx.fillText(txt,p.x+13,p.y+1);
+  };
+  if(angles.knee!=null) label(P('kn'), Math.round(angles.knee)+'°');
+  if(angles.elbow!=null) label(P('el'), Math.round(angles.elbow)+'°');
+  if(angles.hip!=null) label(P('hip'), Math.round(angles.hip)+'°');
+  if(angles.torso!=null){ const s=P('sh'); label({x:s.x,y:s.y-H*0.06}, 'корпус '+Math.round(angles.torso)+'°'); }
+}
+
+/* ---------------- цикл анализа ---------------- */
+let running=false, lastVideoTime=-1;
+const pillPose=document.getElementById('pillPose'), pillPedal=document.getElementById('pillPedal');
+async function loop(){
+  if(!running) return;
+  requestAnimationFrame(loop);
+  if(paused || vid.readyState<2 || vid.videoWidth===0) return;
+  if(vid.currentTime===lastVideoTime && !vid.srcObject) return; // файл на паузе
+  lastVideoTime=vid.currentTime;
+  if(cv.width!==vid.videoWidth){ cv.width=vid.videoWidth; cv.height=vid.videoHeight;
+    document.getElementById('stage').style.aspectRatio = vid.videoWidth+'/'+vid.videoHeight; }
+  let res;
+  try{ res = demoMode ? demoDetect() : landmarker.detectForVideo(vid, performance.now()); }catch(e){ return; }
+  const t=performance.now();
+  if(res && res.landmarks && res.landmarks.length){
+    const lm=smooth(res.landmarks[0]);
+    const side=pickSide(lm); lastSide=side; lastLm=lm;
+    const I=IDX[side];
+    /* нормализованные координаты → пиксельные, иначе углы искажаются на не-квадратном кадре */
+    const g=i=>({x:lm[i].x*vid.videoWidth, y:lm[i].y*vid.videoHeight});
+    const knee = angleAt(g(I.hip),g(I.kn),g(I.an));
+    const hip  = angleAt(g(I.sh),g(I.hip),g(I.kn));
+    const elbow= angleAt(g(I.sh),g(I.el),g(I.wr));
+    const shoulder=angleAt(g(I.el),g(I.sh),g(I.hip));
+    const torso= torsoAngle(g(I.hip),g(I.sh));
+    pushSample({t, knee, hip, elbow, shoulder, torso});
+    drawPose(lm, side, {knee, elbow, hip, torso});
+    poseOk=true;
+  }else{
+    poseOk=false; ctx.clearRect(0,0,cv.width,cv.height);
+  }
+}
+setInterval(()=>{
+  if(!running) return;
+  stats=computeStats();
+  pillPose.className='pill '+(poseOk?'ok':'crit');
+  pillPose.textContent=poseOk?'✓ Поза распознана ('+(lastSide==='R'?'правый':'левый')+' бок)':'✕ Поза не найдена';
+  if(stats){
+    pillPedal.className='pill '+(stats.pedaling?'ok':'warn');
+    pillPedal.textContent=stats.pedaling?'✓ Педалирование':'▲ Нет педалирования';
+  }
+  renderPanel();
+},400);
+
+/* ---------------- экраны и сообщения ---------------- */
+const screens={home:'screen-home',an:'screen-analyze',cam:'screen-cam'};
+function show(s){ document.querySelectorAll('.screen').forEach(e=>e.classList.remove('active'));
+  document.getElementById(screens[s]).classList.add('active'); }
+const stageMsg=document.getElementById('stageMsg');
+function setMsg(big,sub='',showQr=false){
+  stageMsg.style.display='flex';
+  document.getElementById('msgBig').textContent=big;
+  document.getElementById('msgSub').innerHTML=sub;
+  document.getElementById('qrBox').style.display=showQr?'block':'none';
+  if(!showQr) document.getElementById('msgExtra').innerHTML='';
+}
+function hideMsg(){ stageMsg.style.display='none'; }
+
+let currentStream=null, trysteroRoom=null;
+function stopAll(){
+  running=false; paused=false; samples=[]; stats=null; ema=null; lastVideoTime=-1;
+  demoMode=false; if(demoRAF) cancelAnimationFrame(demoRAF); demoRAF=0; demoCanvas=null;
+  if(currentStream){ currentStream.getTracks().forEach(t=>t.stop()); currentStream=null; }
+  if(trysteroRoom){ try{trysteroRoom.leave();}catch(e){} trysteroRoom=null; }
+  vid.srcObject=null; vid.removeAttribute('src'); vid.load();
+  fileInput.value='';
+  document.getElementById('btnPause').style.display='none';
+  ctx.clearRect(0,0,cv.width,cv.height);
+}
+document.getElementById('btnBack').onclick=()=>{ stopAll(); show('home'); };
+
+async function startAnalysis(srcInfo){
+  document.getElementById('srcInfo').textContent=srcInfo||'';
+  samples=[]; stats=null; ema=null;
+  if(!landmarker) setMsg('Загрузка модели позы…','Первый запуск может занять ~10 секунд.');
+  await ensureLandmarker();
+  hideMsg(); running=true; requestAnimationFrame(loop);
+}
+
+/* ---------------- режим: вебкамера ---------------- */
+document.getElementById('modeWebcam').onclick=async()=>{
+  show('an'); setMsg('Запрос доступа к камере…');
+  try{
+    let stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1920},height:{ideal:1080}},audio:false});
+    /* дать выбрать камеру, если их несколько */
+    const cams=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+    if(cams.length>1){
+      const cur=stream.getVideoTracks()[0].getSettings().deviceId;
+      const others=cams.filter(c=>c.deviceId!==cur);
+      setMsg('Какая камера?', 'Найдено несколько камер. Если это не та (например, нужен телефон-вебкамера) — нажмите на нужную:'+
+        '<div style="margin-top:10px;display:flex;flex-direction:column;gap:6px">'+
+        cams.map(c=>`<button class="btn small" data-cam="${c.deviceId}">${c.label||'Камера'}</button>`).join('')+
+        `</div><div style="margin-top:10px"><button class="btn primary small" id="camGo">Продолжить с текущей</button></div>`);
+      await new Promise(res=>{
+        stageMsg.querySelectorAll('[data-cam]').forEach(b=>b.onclick=async()=>{
+          stream.getTracks().forEach(t=>t.stop());
+          stream=await navigator.mediaDevices.getUserMedia({video:{deviceId:{exact:b.dataset.cam},width:{ideal:1920}},audio:false});
+          res();
+        });
+        stageMsg.querySelector('#camGo').onclick=()=>res();
+      });
+    }
+    currentStream=stream; vid.srcObject=stream; await vid.play();
+    await startAnalysis('Источник: камера устройства');
+  }catch(e){ setMsg('Нет доступа к камере','Разрешите доступ к камере в браузере и попробуйте снова. '+e.message); }
+};
+
+/* ---------------- режим: файл ---------------- */
+const fileInput=document.getElementById('fileInput');
+document.getElementById('modeFile').onclick=()=>fileInput.click();
+fileInput.onchange=async()=>{
+  const f=fileInput.files[0]; if(!f) return;
+  show('an'); setMsg('Загрузка видео…');
+  vid.src=URL.createObjectURL(f); vid.loop=true; vid.controls=false;
+  await vid.play().catch(()=>{});
+  document.getElementById('btnPause').style.display='inline-block';
+  await startAnalysis('Источник: файл — '+f.name);
+};
+document.getElementById('btnPause').onclick=e=>{
+  if(vid.paused){ vid.play(); e.target.textContent='⏸ Пауза'; paused=false; }
+  else{ vid.pause(); e.target.textContent='▶ Продолжить'; paused=true; }
+};
+
+/* ---------------- режим: стрим с телефона (Trystero, серверлесс-сигналинг) ---------------- */
+const TRYSTERO_APP='bikefit-ai-v1';
+async function getTrystero(){
+  const urls=['https://esm.run/trystero@0.25.1','https://esm.run/trystero','https://esm.run/@trystero-p2p/mqtt'];
+  let lastErr;
+  for(const u of urls){ try{ return await import(u); }catch(e){ lastErr=e; } }
+  throw new Error('не удалось загрузить модуль связи ('+(lastErr&&lastErr.message||'сеть')+')');
+}
+function randRoom(){ return Math.random().toString(36).slice(2,8); }
+document.getElementById('modeStream').onclick=async()=>{
+  show('an');
+  const room=randRoom();
+  const isHosted = location.protocol.startsWith('http');
+  const camUrl = isHosted ? location.origin+location.pathname+'?role=cam&room='+room : null;
+  if(isHosted){
+    setMsg('Отсканируйте QR-код телефоном','Откройте камеру телефона, наведите на код и перейдите по ссылке — телефон превратится в камеру.<br>Код комнаты: <b>'+room+'</b>. Обоим устройствам нужен интернет для соединения; само видео дальше идёт напрямую.',true);
+    const qb=document.getElementById('qrBox'); qb.innerHTML='';
+    new QRCode(qb,{text:camUrl,width:180,height:180});
+    document.getElementById('msgExtra').innerHTML='или откройте на телефоне вручную:<br><b style="word-break:break-all">'+camUrl+'</b>';
+  }else{
+    setMsg('Нужен HTTPS-адрес для телефона',
+      'Файл открыт локально (file://), телефон не сможет открыть камеру по такой ссылке.<br><br>'+
+      'Загрузите этот HTML-файл на любой бесплатный хостинг (например, <b>Netlify Drop</b> или GitHub Pages) и открывайте оттуда — тогда появится QR-код.<br><br>'+
+      'А пока используйте режимы «Камера этого устройства», «Видеофайл» или «Демо».');
+    return;
+  }
+  ensureLandmarker().catch(()=>{});
+  try{
+    const T=await getTrystero();
+    trysteroRoom=T.joinRoom({appId:TRYSTERO_APP},'bf-'+room);
+    trysteroRoom.onPeerJoin(()=>{
+      document.getElementById('msgExtra').innerHTML='📱 Телефон подключился — открываем видеопоток…';
+    });
+    trysteroRoom.onPeerStream(async(stream)=>{
+      currentStream=stream; vid.srcObject=stream; await vid.play().catch(()=>{});
+      await startAnalysis('Источник: телефон (Wi-Fi), комната '+room);
+    });
+    trysteroRoom.onPeerLeave(()=>{
+      if(running){ running=false; setMsg('Телефон отключился','Переоткройте ссылку на телефоне — соединение восстановится в этой же комнате.'); }
+    });
+  }catch(e){
+    setMsg('Ошибка модуля связи', e.message+'.<br>Проверьте интернет на компьютере и обновите страницу.');
+  }
+};
+
+/* ---------------- демо-режим: синтетический велосипедист ---------------- */
+/* Дизайн-пространство 640×520, каденс 42 об/мин. Эталонные углы:
+   колено внизу ≈145°, вверху ≈69°, корпус 40°, локоть 150°, плечо 90°. */
+const DG = {
+  BB:{x:320,y:420}, crank:42.5, T:110, S:110,
+  hip:{x:279,y:257.7}, sh:{x:390.1,y:164.5}, wrist:{x:488.2,y:233.2}, U:62, F:62,
+  rev:0.7, RA:{x:220,y:403}, FA:{x:470,y:403}, wheelR:85, floor:492,
+};
+function dgIK(p1,p2,l1,l2,maxX,maxY){
+  const dx=p2.x-p1.x, dy=p2.y-p1.y, d=Math.hypot(dx,dy);
+  const a=(l1*l1-l2*l2+d*d)/(2*d), h=Math.sqrt(Math.max(0,l1*l1-a*a));
+  const mx=p1.x+a*dx/d, my=p1.y+a*dy/d;
+  const s1={x:mx+h*(-dy/d),y:my+h*(dx/d)}, s2={x:mx-h*(-dy/d),y:my-h*(dx/d)};
+  if(maxX) return s1.x>=s2.x?s1:s2;
+  if(maxY) return s1.y>=s2.y?s1:s2;
+  return s1;
+}
+function dgPoints(tSec, phase=0){
+  const th=2*Math.PI*DG.rev*tSec+phase;
+  const ankle={x:DG.BB.x+DG.crank*Math.cos(th), y:DG.BB.y+DG.crank*Math.sin(th)};
+  const knee=dgIK(DG.hip,ankle,DG.T,DG.S,true,false);
+  const elbow=dgIK(DG.sh,DG.wrist,DG.U,DG.F,false,true);
+  return {hip:DG.hip, sh:DG.sh, wrist:DG.wrist, ankle, knee, elbow,
+    heel:{x:ankle.x-9,y:ankle.y+7}, toe:{x:ankle.x+24,y:ankle.y+5}};
+}
+function drawCyclist(g,W,H,tSec){
+  const s=H/520, offX=(W-640*s)/2;
+  const X=p=>offX+p.x*s, Y=p=>p.y*s;
+  const capsule=(p,q,w,col)=>{ g.strokeStyle=col; g.lineWidth=w*s; g.lineCap='round';
+    g.beginPath(); g.moveTo(X(p),Y(p)); g.lineTo(X(q),Y(q)); g.stroke(); };
+  /* фон */
+  const bg=g.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#383d45'); bg.addColorStop(1,'#242830');
+  g.fillStyle=bg; g.fillRect(0,0,W,H);
+  g.fillStyle='#1e2126'; g.fillRect(0,DG.floor*s,W,H-DG.floor*s);
+  g.strokeStyle='rgba(255,255,255,.06)'; g.lineWidth=1;
+  for(let i=1;i<6;i++){ g.beginPath(); g.moveTo(W*i/6,0); g.lineTo(W*i/6,DG.floor*s); g.stroke(); }
+  const near=dgPoints(tSec,0), far=dgPoints(tSec,Math.PI);
+  const SKIN='#d7a07c', SKIN_D='#a8765a', JERS='#2f6fd0', JERS_D='#20488c', SHORT='#23252b', SHORT_D='#131418';
+  const off=(p,dx,dy)=>({x:p.x+dx,y:p.y+dy});
+  /* дальние конечности (темнее) */
+  const fo=p=>off(p,-7,3);
+  capsule(fo(far.hip),fo(far.knee),16,SHORT_D);
+  capsule(fo(far.knee),fo(far.ankle),10,SKIN_D);
+  capsule(fo(far.heel),fo(far.toe),8,'#7d2a2a');
+  capsule(fo(DG.sh),fo(far.elbow),9,JERS_D);
+  capsule(fo(far.elbow),fo(far.wrist),8,SKIN_D);
+  /* велосипед */
+  const bike='#4a4e55', rim='#8a8f98', tire='#141518';
+  for(const A of [DG.RA,DG.FA]){
+    g.beginPath(); g.arc(X(A),Y(A),DG.wheelR*s,0,7); g.lineWidth=9*s; g.strokeStyle=tire; g.stroke();
+    g.beginPath(); g.arc(X(A),Y(A),(DG.wheelR-5)*s,0,7); g.lineWidth=2.5*s; g.strokeStyle=rim; g.stroke();
+    g.lineWidth=1.2*s; g.strokeStyle='rgba(180,185,195,.5)';
+    for(let i=0;i<12;i++){ const a=tSec*3+i*Math.PI/6;
+      g.beginPath(); g.moveTo(X(A),Y(A)); g.lineTo(X(A)+Math.cos(a)*(DG.wheelR-6)*s, Y(A)+Math.sin(a)*(DG.wheelR-6)*s); g.stroke(); }
+    g.beginPath(); g.arc(X(A),Y(A),4*s,0,7); g.fillStyle='#666'; g.fill();
+  }
+  /* станок под задним колесом */
+  g.fillStyle='#15161a';
+  g.fillRect(X(DG.RA)-30*s, (DG.floor-14)*s, 60*s, 14*s);
+  const seat={x:272,y:250}, htTop={x:447,y:222}, htBot={x:452,y:245};
+  g.lineWidth=8*s; g.strokeStyle=bike; g.lineCap='round';
+  const tube=(p,q)=>{ g.beginPath(); g.moveTo(X(p),Y(p)); g.lineTo(X(q),Y(q)); g.stroke(); };
+  tube(DG.BB,{x:274,y:262}); tube({x:274,y:262},seat);            // подседел
+  tube({x:275,y:258},htTop); tube(DG.BB,htBot);                   // верхняя+нижняя
+  tube(DG.RA,DG.BB); tube(DG.RA,{x:276,y:262});                   // перья
+  tube(htBot,DG.FA); tube(htTop,htBot);                           // вилка
+  g.lineWidth=5*s; tube(htTop,{x:470,y:225}); tube({x:470,y:225},{x:492,y:238}); // руль+дропы
+  g.fillStyle='#1b1c20';
+  g.beginPath(); g.ellipse(X(seat),Y(seat)-3*s,22*s,5.5*s,0,0,7); g.fill();      // седло
+  g.beginPath(); g.arc(X(DG.BB),Y(DG.BB),16*s,0,7); g.lineWidth=3.5*s; g.strokeStyle='#61666e'; g.stroke(); // звезда
+  /* шатун и педаль (ближняя нога) */
+  g.lineWidth=6*s; g.strokeStyle='#2c2e33';
+  g.beginPath(); g.moveTo(X(DG.BB),Y(DG.BB)); g.lineTo(X(near.ankle),Y(near.ankle)); g.stroke();
+  /* ближняя нога */
+  capsule(near.hip,near.knee,19,'#0d0e12');                       // контур
+  capsule(near.hip,near.knee,15,SHORT);
+  capsule(off(near.knee,0,0),off(near.ankle,0,0),13,'#0d0e12');
+  capsule(near.knee,near.ankle,10,SKIN);
+  capsule(off(near.ankle,-2,-4),off(near.ankle,-1,0),9,'#eee');   // носок
+  capsule(near.heel,near.toe,9,'#d03b3b');                        // туфля
+  g.strokeStyle='#111'; g.lineWidth=3*s;
+  g.beginPath(); g.moveTo(X(off(near.heel,-2,6)),Y(off(near.heel,-2,6))); g.lineTo(X(off(near.toe,2,4)),Y(off(near.toe,2,4))); g.stroke(); // подошва
+  /* корпус */
+  capsule(off(near.hip,0,-6),off(DG.sh,1,3),24,JERS);
+  g.strokeStyle=JERS_D; g.lineWidth=2.5*s;
+  g.beginPath(); g.moveTo(X(off(near.hip,6,-14)),Y(off(near.hip,6,-14))); g.lineTo(X(off(DG.sh,-5,4)),Y(off(DG.sh,-5,4))); g.stroke();
+  /* голова */
+  const dirT={x:(DG.sh.x-DG.hip.x)/145,y:(DG.sh.y-DG.hip.y)/145};
+  const hc={x:DG.sh.x+dirT.x*24+8, y:DG.sh.y+dirT.y*24-1};
+  capsule(DG.sh,{x:hc.x-6,y:hc.y+6},11,SKIN);                      // шея
+  g.fillStyle=SKIN; g.beginPath(); g.arc(X(hc),Y(hc),15.5*s,0,7); g.fill();
+  g.fillStyle=SKIN; g.beginPath(); g.ellipse(X(off(hc,14,3)),Y(off(hc,14,3)),4.5*s,3.2*s,0,0,7); g.fill(); // нос
+  g.fillStyle='#3a2f28';
+  g.beginPath(); g.arc(X(hc),Y(hc),15.5*s, Math.PI*0.8, Math.PI*1.95); g.lineTo(X(hc),Y(hc)); g.fill(); // волосы
+  g.fillStyle='#c58e6d'; g.beginPath(); g.ellipse(X(off(hc,-3,3)),Y(off(hc,-3,3)),3.4*s,5*s,0,0,7); g.fill(); // ухо
+  g.fillStyle='#2a2a2a'; g.beginPath(); g.arc(X(off(hc,8,-1)),Y(off(hc,8,-1)),1.8*s,0,7); g.fill();   // глаз
+  g.strokeStyle='#8a5c42'; g.lineWidth=1.4*s;
+  g.beginPath(); g.moveTo(X(off(hc,10,7)),Y(off(hc,10,7))); g.lineTo(X(off(hc,14,6)),Y(off(hc,14,6))); g.stroke(); // рот
+  /* ближняя рука */
+  capsule(DG.sh,near.elbow,13,'#0d0e12');
+  capsule(DG.sh,near.elbow,10,JERS);
+  capsule(near.elbow,near.wrist,8.5,SKIN);
+  g.fillStyle=SKIN; g.beginPath(); g.arc(X(off(near.wrist,6,2)),Y(off(near.wrist,6,2)),6*s,0,7); g.fill();
+  /* виньетка + подпись */
+  const vg=g.createRadialGradient(W/2,H/2,H*0.45,W/2,H/2,H*0.85);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,.28)');
+  g.fillStyle=vg; g.fillRect(0,0,W,H);
+  g.fillStyle='rgba(255,255,255,.35)'; g.font=`${12*s}px system-ui`;
+  g.fillText('BikeFit AI — демо · колено 145°/69° · корпус 40° · локоть 150°', 14*s, H-10*s);
+}
+let demoMode=false, demoRAF=0, demoT0=0, demoCanvas=null;
+function demoDetect(){
+  const t=(performance.now()-demoT0)/1000;
+  const W=demoCanvas.width, H=demoCanvas.height, s=H/520, offX=(W-640*s)/2;
+  const p=dgPoints(t,0), pf=dgPoints(t,Math.PI);
+  const lm=Array.from({length:33},()=>({x:.5,y:.5,z:0,visibility:0}));
+  const put=(i,pt,v)=>{ lm[i]={x:(offX+pt.x*s)/W, y:pt.y*s/H, z:0, visibility:v}; };
+  put(12,p.sh,1); put(14,p.elbow,1); put(16,p.wrist,1);
+  put(24,p.hip,1); put(26,p.knee,1); put(28,p.ankle,1); put(30,p.heel,1); put(32,p.toe,1);
+  const o=q=>({x:q.x-7,y:q.y+3});
+  put(11,o(p.sh),.4); put(13,o(pf.elbow),.4); put(15,o(pf.wrist),.4);
+  put(23,o(p.hip),.4); put(25,o(pf.knee),.4); put(27,o(pf.ankle),.4);
+  put(29,o(pf.heel),.4); put(31,o(pf.toe),.4);
+  put(0,{x:p.sh.x+30,y:p.sh.y-32},.9);
+  return {landmarks:[lm]};
+}
+function startDemoRender(){
+  demoCanvas=document.createElement('canvas'); demoCanvas.width=1280; demoCanvas.height=720;
+  const g=demoCanvas.getContext('2d');
+  demoT0=performance.now();
+  const draw=()=>{ if(!demoMode) return;
+    drawCyclist(g,demoCanvas.width,demoCanvas.height,(performance.now()-demoT0)/1000);
+    demoRAF=requestAnimationFrame(draw); };
+  demoMode=true; draw();
+  return demoCanvas.captureStream(30);
+}
+document.getElementById('modeDemo').onclick=async()=>{
+  show('an');
+  const stream=startDemoRender();
+  currentStream=stream; vid.srcObject=stream;
+  await vid.play().catch(()=>{});
+  document.getElementById('srcInfo').textContent='Источник: демо — синтетический велосипедист (эталон: колено 145°/69°, корпус 40°, локоть 150°)';
+  samples=[]; stats=null; ema=null;
+  hideMsg(); running=true; requestAnimationFrame(loop);
+};
+
+/* ---------------- телефон-отправитель ---------------- */
+const qp=new URLSearchParams(location.search);
+if(qp.get('role')==='cam' && qp.get('room')){
+  show('cam');
+  const roomCode=qp.get('room');
+  const st=document.getElementById('camStatus');
+  let facing='environment', camStream=null, sendRoom=null;
+  const sentTo=new Set();
+  async function getCam(){
+    const s=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:facing,width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:false});
+    document.getElementById('camPreview').srcObject=s;
+    return s;
+  }
+  async function connect(){
+    st.innerHTML='Запуск камеры…';
+    try{ camStream=await getCam(); }catch(e){ st.innerHTML='❌ Нет доступа к камере: '+e.message; return; }
+    st.innerHTML='Подключение…';
+    let T;
+    try{ T=await getTrystero(); }
+    catch(e){ st.innerHTML='❌ '+e.message+'. Проверьте интернет и перезагрузите страницу.'; return; }
+    sendRoom=T.joinRoom({appId:TRYSTERO_APP},'bf-'+roomCode);
+    st.innerHTML='Ожидание компьютера… На ПК должен быть открыт режим «Трансляция с телефона», комната <b>'+roomCode+'</b>.';
+    sendRoom.onPeerJoin(pid=>{
+      if(!sentTo.has(pid)){ sentTo.add(pid); sendRoom.addStream(camStream,pid); }
+      st.innerHTML='<span class="rec-dot"></span><b>Идёт трансляция</b> — комната '+roomCode+'. Совместите велосипед с силуэтом и крутите педали.';
+    });
+    sendRoom.onPeerLeave(pid=>{ sentTo.delete(pid); st.innerHTML='Компьютер отключился. Ожидание…'; });
+  }
+  document.getElementById('btnFlip').onclick=async()=>{
+    facing = facing==='environment'?'user':'environment';
+    const oldTrack=camStream && camStream.getVideoTracks()[0];
+    let s; try{ s=await getCam(); }catch(e){ return; }
+    const newTrack=s.getVideoTracks()[0];
+    if(sendRoom && oldTrack){ try{ await sendRoom.replaceTrack(oldTrack,newTrack); }catch(e){} }
+    if(oldTrack) oldTrack.stop();
+    camStream=s;
+  };
+  /* силуэт-подсказка для выставления кадра */
+  const guide=document.getElementById('camGuide'), gctx=guide.getContext('2d');
+  function drawGuide(){
+    const w=guide.clientWidth, h=guide.clientHeight;
+    guide.width=w*devicePixelRatio; guide.height=h*devicePixelRatio;
+    const g=gctx; g.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    g.clearRect(0,0,w,h);
+    if(guide.style.display==='none') return;
+    const s=Math.min(w/640,h/520)*0.86, offX=(w-640*s)/2, offY=(h-520*s)/2;
+    const X=p=>offX+p.x*s, Y=p=>offY+p.y*s;
+    g.strokeStyle='rgba(255,255,255,.55)'; g.lineCap='round'; g.setLineDash([]);
+    const ln=(p,q,wd)=>{ g.lineWidth=wd*s; g.beginPath(); g.moveTo(X(p),Y(p)); g.lineTo(X(q),Y(q)); g.stroke(); };
+    /* колёса */
+    for(const A of [DG.RA,DG.FA]){ g.lineWidth=3*s; g.beginPath(); g.arc(X(A),Y(A),DG.wheelR*s,0,7); g.stroke(); }
+    /* рама */
+    const seat={x:272,y:250}, htTop={x:447,y:222}, htBot={x:452,y:245};
+    ln(DG.BB,seat,3); ln({x:275,y:258},htTop,3); ln(DG.BB,htBot,3);
+    ln(DG.RA,DG.BB,3); ln(DG.RA,{x:276,y:262},3); ln(htBot,DG.FA,3); ln(htTop,{x:492,y:238},3);
+    /* гонщик (нижняя точка хода педали) */
+    const p=dgPoints(0.357,0);
+    g.strokeStyle='rgba(57,135,229,.65)';
+    ln(p.hip,DG.sh,6); ln(p.hip,p.knee,5); ln(p.knee,p.ankle,4);
+    ln(DG.sh,p.elbow,4); ln(p.elbow,p.wrist,3.5);
+    g.beginPath(); g.arc(X({x:DG.sh.x+20,y:DG.sh.y-18}),Y({x:DG.sh.x+20,y:DG.sh.y-18}),14*s,0,7); g.lineWidth=3*s; g.stroke();
+    /* горизонт */
+    g.strokeStyle='rgba(255,255,255,.25)'; g.setLineDash([8,8]); g.lineWidth=1.5;
+    g.beginPath(); g.moveTo(0,Y(DG.BB)); g.lineTo(w,Y(DG.BB)); g.stroke(); g.setLineDash([]);
+    g.fillStyle='rgba(255,255,255,.75)'; g.font='13px system-ui'; g.textAlign='center';
+    g.fillText('Совместите велосипед с силуэтом · камера сбоку, объектив на уровне пунктира', w/2, Y(DG.BB)+20);
+  }
+  new ResizeObserver(drawGuide).observe(guide);
+  drawGuide();
+  document.getElementById('btnGuide').onclick=()=>{
+    guide.style.display = guide.style.display==='none' ? 'block' : 'none';
+    if(guide.style.display!=='none') drawGuide();
+  };
+  connect();
+}
+
+/* ---------------- отчёт PNG ---------------- */
+document.getElementById('btnReport').onclick=()=>{
+  const W=1280, sideW=430;
+  const vw=vid.videoWidth||1280, vh=vid.videoHeight||720;
+  const scale=(W-sideW)/vw, H=Math.max(Math.round(vh*scale), 640);
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const g=c.getContext('2d');
+  g.fillStyle='#0d0d0d'; g.fillRect(0,0,W,H);
+  if(vid.videoWidth){ g.drawImage(vid,0,(H-vh*scale)/2,vw*scale,vh*scale); g.drawImage(cv,0,(H-vh*scale)/2,vw*scale,vh*scale); }
+  const x=W-sideW+24; let y=44;
+  g.fillStyle='#fff'; g.font='700 24px system-ui';
+  g.fillText('🚴 BikeFit AI — отчёт', x, y); y+=30;
+  g.font='400 14px system-ui'; g.fillStyle='#c3c2b7';
+  g.fillText(REF[bike].label+' · цель: '+LEVELS[level]+' · '+new Date().toLocaleString('ru-RU'), x, y); y+=34;
+  const ref=REF[bike].levels[level];
+  g.font='400 15px system-ui';
+  for(const m of METRICS){
+    const v=stats?stats[m.key]:null, r=ref[m.key], gr=stats?gradeVal(v,r):'idle';
+    const col=gr==='ok'?'#0ca30c':gr==='warn'?'#fab219':gr==='crit'?'#d03b3b':'#898781';
+    g.fillStyle='#c3c2b7'; g.fillText(m.name, x, y);
+    g.fillStyle=col; g.font='700 15px system-ui';
+    g.fillText((v!=null?Math.round(v)+'°':'–')+'  (цель '+r[0]+'–'+r[1]+'°)', x, y+20);
+    g.font='400 15px system-ui'; y+=52;
+  }
+  if(stats){
+    const adv=buildAdvice(stats,ref); g.fillStyle='#fff'; g.font='700 16px system-ui';
+    g.fillText(adv.length?'Рекомендации:':'Посадка соответствует цели ✓', x, y); y+=24;
+    g.font='400 13px system-ui'; g.fillStyle='#c3c2b7';
+    for(const a of adv.slice(0,4)){
+      const words=(a.h+'. '+a.b).split(' '); let line='';
+      for(const w of words){
+        if(g.measureText(line+' '+w).width > sideW-48){ g.fillText(line,x,y); y+=18; line=w; if(y>H-20)break; }
+        else line=line?line+' '+w:w;
+      }
+      if(y<=H-20){ g.fillText(line,x,y); y+=26; }
+      if(y>H-20) break;
+    }
+  }
+  const a=document.createElement('a');
+  a.download='bikefit-report.png'; a.href=c.toDataURL('image/png'); a.click();
+};
+
+/* хук для автотестов */
+window.__bf = { angleAt, torsoAngle, percentile, REF,
+  getStats:()=>stats, getSamples:()=>samples, isRunning:()=>running,
+  getDemoCanvas:()=>demoCanvas, drawCyclist, dgPoints };
+</script>
+</body>
+</html>
